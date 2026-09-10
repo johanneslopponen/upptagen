@@ -49,7 +49,7 @@ pub fn generate_latex_source(entries: &[TimeEntry]) -> String {
     tex.push_str("\\usepackage{longtable}\n");
     tex.push_str("\\usepackage{hyperref}\n");
     tex.push_str("\\title{Time Tracking Report}\n");
-    tex.push_str("\\author{timetrack}\n");
+    tex.push_str("\\author{upptagen}\n");
     tex.push_str("\\date{\\today}\n");
     tex.push_str("\\begin{document}\n");
     tex.push_str("\\maketitle\n\n");
@@ -209,6 +209,11 @@ mod tests {
 
     #[test]
     fn test_export_pdf_compilation() {
+        if Command::new("pdflatex").arg("--version").output().is_err() {
+            println!("pdflatex not found; skipping test_export_pdf_compilation");
+            return;
+        }
+
         let temp_pdf = NamedTempFile::new().unwrap();
         let path = temp_pdf.path();
 

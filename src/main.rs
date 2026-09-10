@@ -135,6 +135,57 @@ async fn main() {
             }
         }
 
+        Commands::Edit {
+            id,
+            project,
+            description,
+            start,
+            end,
+            tags,
+        } => {
+            let start_dt = match start {
+                Some(ref s) => match parse_datetime(s) {
+                    Ok(dt) => Some(dt),
+                    Err(e) => {
+                        eprintln!("Invalid start time: {}", e);
+                        process::exit(1);
+                    }
+                },
+                None => None,
+            };
+
+            let end_dt = match end {
+                Some(ref e_str) => match parse_datetime(e_str) {
+                    Ok(dt) => Some(dt),
+                    Err(e) => {
+                        eprintln!("Invalid end time: {}", e);
+                        process::exit(1);
+                    }
+                },
+                None => None,
+            };
+
+            match db.edit_entry(id, project, description, start_dt, end_dt, tags) {
+                Ok(entry) => {
+                    println!("✏️ Entry #{} updated successfully!", entry.id);
+                    if let Some(p) = entry.project {
+                        println!("   Project:  {}", p);
+                    }
+                    if let Some(d) = entry.description {
+                        println!("   Desc:     {}", d);
+                    }
+                    println!("   Duration: {}", format_duration(entry.duration_seconds));
+                    if !entry.tags.is_empty() {
+                        println!("   Tags:     {}", entry.tags.join(", "));
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error editing entry #{}: {}", id, e);
+                    process::exit(1);
+                }
+            }
+        }
+
         Commands::List {
             project,
             tag,
