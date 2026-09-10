@@ -29,8 +29,8 @@ impl Database {
 
     pub fn default_db_path() -> std::path::PathBuf {
         let mut path = dirs::data_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-        path.push("timetrack");
-        path.push("timetrack.db");
+        path.push("upptagen");
+        path.push("upptagen.db");
         path
     }
 
@@ -329,6 +329,106 @@ impl Database {
         Ok(tags)
     }
 
+    pub fn get_entry(&self, id: i64) -> Result<Option<TimeEntry>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, project, description, start_time, end_time, duration_seconds
+                 FROM entries WHERE id = ?1",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let mut rows = stmt.query(params![id]).map_err(|e| e.to_string())?;
+        if let Some(row) = rows.next().map_err(|e| e.to_string())? {
+            let id: i64 = row.get(0).map_err(|e| e.to_string())?;
+            let project: Option<String> = row.get(1).map_err(|e| e.to_string())?;
+            let description: Option<String> = row.get(2).map_err(|e| e.to_string())?;
+            let start_time_str: String = row.get(3).map_err(|e| e.to_string())?;
+            let end_time_str: String = row.get(4).map_err(|e| e.to_string())?;
+            let duration_seconds: i64 = row.get(5).map_err(|e| e.to_string())?;
+
+            let start_time = DateTime::parse_from_rfc3339(&start_time_str)
+                .map(|dt| dt.with_timezone(&Utc))
+                .map_err(|e| e.to_string())?;
+            let end_time = DateTime::parse_from_rfc3339(&end_time_str)
+                .map(|dt| dt.with_timezone(&Utc))
+                .map_err(|e| e.to_string())?;
+
+            let tags = self.get_tags_for_entry(id)?;
+
+            Ok(Some(TimeEntry {
+                id,
+                project,
+                description,
+                start_time,
+                end_time,
+                duration_seconds,
+                tags,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn edit_entry(
+        &self,
+        id: i64,
+        project: Option<String>,
+        description: Option<String>,
+        start_time: Option<DateTime<Utc>>,
+        end_time: Option<DateTime<Utc>>,
+        tags: Option<Vec<String>>,
+    ) -> Result<TimeEntry, String> {
+        let existing = self
+            .get_entry(id)?
+            .ok_or_else(|| format!("Entry #{} not found.", id))?;
+
+        let new_project = project.or(existing.project);
+        let new_description = description.or(existing.description);
+        let new_start = start_time.unwrap_or(existing.start_time);
+        let new_end = end_time.unwrap_or(existing.end_time);
+
+        if new_end < new_start {
+            return Err("End time cannot be earlier than start time.".into());
+        }
+
+        let new_duration = (new_end - new_start).num_seconds();
+
+        self.conn
+            .execute(
+                "UPDATE entries SET project = ?1, description = ?2, start_time = ?3, end_time = ?4, duration_seconds = ?5 WHERE id = ?6",
+                params![
+                    new_project,
+                    new_description,
+                    new_start.to_rfc3339(),
+                    new_end.to_rfc3339(),
+                    new_duration,
+                    id
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+
+        let new_tags = if let Some(t) = tags {
+            self.conn
+                .execute("DELETE FROM entry_tags WHERE entry_id = ?1", params![id])
+                .map_err(|e| e.to_string())?;
+            self.associate_tags(id, &t)?;
+            t
+        } else {
+            existing.tags
+        };
+
+        Ok(TimeEntry {
+            id,
+            project: new_project,
+            description: new_description,
+            start_time: new_start,
+            end_time: new_end,
+            duration_seconds: new_duration,
+            tags: new_tags,
+        })
+    }
+
     pub fn delete_entry(&self, id: i64) -> Result<bool, String> {
         self.conn
             .execute("DELETE FROM entry_tags WHERE entry_id = ?1", params![id])
@@ -451,7 +551,25 @@ mod tests {
         let tag_stats = db.list_tags().unwrap();
         assert!(tag_stats.iter().any(|t| t.name == "rust"));
 
-        // 7. Deletion
+        // 7. Editing entry
+        let edited = db
+            .edit_entry(
+                entry.id,
+                Some("Updated Project A".into()),
+                Some("Updated description".into()),
+                None,
+                None,
+                Some(vec!["edited_tag".into()]),
+            )
+            .unwrap();
+        assert_eq!(edited.project.as_deref(), Some("Updated Project A"));
+        assert_eq!(edited.description.as_deref(), Some("Updated description"));
+        assert_eq!(edited.tags, vec!["edited_tag"]);
+
+        let fetched = db.get_entry(entry.id).unwrap().unwrap();
+        assert_eq!(fetched.project.as_deref(), Some("Updated Project A"));
+
+        // 8. Deletion
         let deleted = db.delete_entry(retro.id).unwrap();
         assert!(deleted);
         let after_delete = db.list_entries(&EntryFilter::default()).unwrap();

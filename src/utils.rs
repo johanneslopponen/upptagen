@@ -9,7 +9,15 @@ pub fn parse_datetime(input: &str) -> Result<DateTime<Utc>, String> {
         return Ok(DateTime::from_naive_utc_and_offset(naive, Utc));
     }
 
+    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(input, "%Y-%m-%dT%H:%M:%S") {
+        return Ok(DateTime::from_naive_utc_and_offset(naive, Utc));
+    }
+
     if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(input, "%Y-%m-%d %H:%M") {
+        return Ok(DateTime::from_naive_utc_and_offset(naive, Utc));
+    }
+
+    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(input, "%Y-%m-%dT%H:%M") {
         return Ok(DateTime::from_naive_utc_and_offset(naive, Utc));
     }
 
@@ -39,7 +47,9 @@ mod tests {
     fn test_parse_datetime() {
         assert!(parse_datetime("2025-05-10T12:00:00Z").is_ok());
         assert!(parse_datetime("2025-05-10 12:00:00").is_ok());
+        assert!(parse_datetime("2025-05-10T12:00:00").is_ok());
         assert!(parse_datetime("2025-05-10 12:00").is_ok());
+        assert!(parse_datetime("2025-05-10T12:00").is_ok());
         assert!(parse_datetime("2025-05-10").is_ok());
         assert!(parse_datetime("invalid-date").is_err());
     }

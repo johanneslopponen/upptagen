@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
-#[command(name = "timetrack")]
+#[command(name = "upptagen")]
 #[command(about = "A CLI and Web time tracking application in Rust", long_about = None)]
 pub struct Cli {
     #[arg(long, global = true, help = "Path to SQLite database file")]
@@ -23,6 +23,27 @@ pub enum Commands {
 
         #[arg(short, long, value_delimiter = ',', help = "Comma-separated list of tags")]
         tags: Vec<String>,
+    },
+
+    #[command(about = "Edit an existing time entry", alias = "update")]
+    Edit {
+        #[arg(help = "ID of entry to edit")]
+        id: i64,
+
+        #[arg(short, long, help = "New project name")]
+        project: Option<String>,
+
+        #[arg(short, long, help = "New task description")]
+        description: Option<String>,
+
+        #[arg(short, long, help = "New start time (e.g. '2025-01-01T10:00:00Z' or '2025-01-01 10:00:00')")]
+        start: Option<String>,
+
+        #[arg(short, long, help = "New end time (e.g. '2025-01-01T10:00:00Z' or '2025-01-01 10:00:00')")]
+        end: Option<String>,
+
+        #[arg(short, long, value_delimiter = ',', help = "New comma-separated list of tags")]
+        tags: Option<Vec<String>>,
     },
 
     #[command(about = "Stop the currently running timer")]

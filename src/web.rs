@@ -37,6 +37,15 @@ pub struct StartTimerReq {
 }
 
 #[derive(Deserialize)]
+pub struct EditEntryReq {
+    pub project: Option<String>,
+    pub description: Option<String>,
+    pub start: Option<String>,
+    pub end: Option<String>,
+    pub tags: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
 pub struct StopTimerReq {
     pub description: Option<String>,
     pub tags: Option<Vec<String>>,
@@ -64,7 +73,7 @@ pub fn create_router(db: Arc<Mutex<Database>>) -> Router {
     Router::new()
         .route("/", get(dashboard_html))
         .route("/api/entries", get(get_entries).post(add_entry))
-        .route("/api/entries/:id", delete(delete_entry))
+        .route("/api/entries/:id", delete(delete_entry).put(edit_entry))
         .route("/api/timer", get(get_timer))
         .route("/api/timer/start", post(start_timer))
         .route("/api/timer/stop", post(stop_timer))
@@ -138,6 +147,41 @@ async fn add_entry(
     let db = state.db.lock().unwrap();
     match db.add_entry(payload.project, payload.description, start_time, end_time, tags) {
         Ok(entry) => (StatusCode::CREATED, Json(entry)).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+    }
+}
+
+async fn edit_entry(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<i64>,
+    Json(payload): Json<EditEntryReq>,
+) -> Response {
+    let start_time = match payload.start {
+        Some(ref s) if !s.trim().is_empty() => match parse_datetime(s) {
+            Ok(dt) => Some(dt),
+            Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
+        },
+        _ => None,
+    };
+
+    let end_time = match payload.end {
+        Some(ref e_str) if !e_str.trim().is_empty() => match parse_datetime(e_str) {
+            Ok(dt) => Some(dt),
+            Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
+        },
+        _ => None,
+    };
+
+    let db = state.db.lock().unwrap();
+    match db.edit_entry(
+        id,
+        payload.project.filter(|s| !s.trim().is_empty()),
+        payload.description.filter(|s| !s.trim().is_empty()),
+        start_time,
+        end_time,
+        payload.tags,
+    ) {
+        Ok(entry) => Json(entry).into_response(),
         Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
     }
 }
@@ -260,7 +304,7 @@ const INDEX_HTML: &str = r#"<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Time Track Dashboard</title>
+    <title>Upptagen Dashboard</title>
     <style>
         :root {
             --bg: #0f172a;
@@ -318,7 +362,7 @@ const INDEX_HTML: &str = r#"<!DOCTYPE html>
 <body>
     <div class="container">
         <header>
-            <h1>⏱️ TimeTrack Dashboard</h1>
+            <h1>⏱️ Upptagen Dashboard</h1>
             <div>
                 <button class="btn-secondary" onclick="openAddModal()">+ Add Manual Entry</button>
             </div>
@@ -414,9 +458,42 @@ const INDEX_HTML: &str = r#"<!DOCTYPE html>
         </div>
     </div>
 
+    <!-- Edit Entry Modal -->
+    <div id="edit-modal" class="modal">
+        <div class="modal-content">
+            <div class="card-title">Edit Time Entry</div>
+            <input type="hidden" id="edit-id">
+            <div>
+                <label style="font-size:0.8rem; color:var(--text-muted)">Project</label>
+                <input type="text" id="edit-proj" placeholder="Project" style="width:100%">
+            </div>
+            <div>
+                <label style="font-size:0.8rem; color:var(--text-muted)">Description</label>
+                <input type="text" id="edit-desc" placeholder="Description" style="width:100%">
+            </div>
+            <div>
+                <label style="font-size:0.8rem; color:var(--text-muted)">Start Time</label>
+                <input type="datetime-local" id="edit-start" style="width:100%">
+            </div>
+            <div>
+                <label style="font-size:0.8rem; color:var(--text-muted)">End Time</label>
+                <input type="datetime-local" id="edit-end" style="width:100%">
+            </div>
+            <div>
+                <label style="font-size:0.8rem; color:var(--text-muted)">Tags (comma separated)</label>
+                <input type="text" id="edit-tags" placeholder="Tags (comma separated)" style="width:100%">
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:0.5rem;">
+                <button class="btn-secondary" onclick="closeEditModal()">Cancel</button>
+                <button class="btn-primary" onclick="submitEditEntry()">Update Entry</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let timerInterval = null;
         let timerStartTime = null;
+        let loadedEntries = [];
 
         function formatDuration(secs) {
             const h = Math.floor(secs / 3600);
@@ -498,12 +575,12 @@ const INDEX_HTML: &str = r#"<!DOCTYPE html>
             if (to) params.append('to', to);
 
             const res = await fetch(`/api/entries?${params.toString()}`);
-            const entries = await res.json();
+            loadedEntries = await res.json();
 
             const tbody = document.getElementById('entries-tbody');
             tbody.innerHTML = '';
 
-            entries.forEach(e => {
+            loadedEntries.forEach(e => {
                 const tr = document.createElement('tr');
                 const startFormatted = new Date(e.start_time).toLocaleString();
                 const tagsHtml = (e.tags || []).map(t => `<span class="tag-badge">${t}</span>`).join('');
@@ -514,7 +591,10 @@ const INDEX_HTML: &str = r#"<!DOCTYPE html>
                     <td>${startFormatted}</td>
                     <td>${formatDuration(e.duration_seconds)}</td>
                     <td>${tagsHtml}</td>
-                    <td><button class="btn-danger" style="padding:0.3rem 0.6rem; font-size:0.8rem" onclick="deleteEntry(${e.id})">Delete</button></td>
+                    <td>
+                        <button class="btn-primary" style="padding:0.3rem 0.6rem; font-size:0.8rem; margin-right: 0.3rem;" onclick="openEditModal(${e.id})">Edit</button>
+                        <button class="btn-danger" style="padding:0.3rem 0.6rem; font-size:0.8rem" onclick="deleteEntry(${e.id})">Delete</button>
+                    </td>
                 `;
                 tbody.appendChild(tr);
             });
@@ -554,6 +634,53 @@ const INDEX_HTML: &str = r#"<!DOCTYPE html>
         }
         function closeAddModal() {
             document.getElementById('add-modal').classList.remove('active');
+        }
+
+        function formatForDatetimeLocal(isoStr) {
+            if (!isoStr) return '';
+            const d = new Date(isoStr);
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
+        function openEditModal(id) {
+            const entry = loadedEntries.find(e => e.id === id);
+            if (!entry) return;
+            document.getElementById('edit-id').value = entry.id;
+            document.getElementById('edit-proj').value = entry.project || '';
+            document.getElementById('edit-desc').value = entry.description || '';
+            document.getElementById('edit-start').value = formatForDatetimeLocal(entry.start_time);
+            document.getElementById('edit-end').value = formatForDatetimeLocal(entry.end_time);
+            document.getElementById('edit-tags').value = (entry.tags || []).join(', ');
+            document.getElementById('edit-modal').classList.add('active');
+        }
+
+        function closeEditModal() {
+            document.getElementById('edit-modal').classList.remove('active');
+        }
+
+        async function submitEditEntry() {
+            const id = document.getElementById('edit-id').value;
+            const project = document.getElementById('edit-proj').value.trim();
+            const description = document.getElementById('edit-desc').value.trim();
+            const start = document.getElementById('edit-start').value;
+            const end = document.getElementById('edit-end').value;
+            const tagsStr = document.getElementById('edit-tags').value.trim();
+            const tags = tagsStr ? tagsStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+            const res = await fetch(`/api/entries/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project, description, start, end, tags })
+            });
+
+            if (res.ok) {
+                closeEditModal();
+                loadEntries();
+            } else {
+                const err = await res.text();
+                alert('Error updating entry: ' + err);
+            }
         }
 
         async function submitAddEntry() {
@@ -650,6 +777,25 @@ mod tests {
         assert_eq!(res.status(), StatusCode::OK);
         let entries: Vec<crate::models::TimeEntry> = res.json().await.unwrap();
         assert_eq!(entries.len(), 1);
+        let entry_id = entries[0].id;
+
+        // 5b. PUT /api/entries/:id
+        let res = client
+            .put(format!("{}/api/entries/{}", base_url, entry_id))
+            .json(&serde_json::json!({
+                "project": "Updated Web",
+                "description": "Edited via PUT API",
+                "start": "2025-01-01T10:00",
+                "end": "2025-01-01T11:00",
+                "tags": ["updated"]
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let updated: crate::models::TimeEntry = res.json().await.unwrap();
+        assert_eq!(updated.project.as_deref(), Some("Updated Web"));
+        assert_eq!(updated.duration_seconds, 3600);
 
         // 6. GET /api/export
         let res = client
@@ -659,6 +805,6 @@ mod tests {
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
         let csv_text = res.text().await.unwrap();
-        assert!(csv_text.contains("Test Web"));
+        assert!(csv_text.contains("Updated Web"));
     }
 }

@@ -2,7 +2,7 @@ use std::process::Command;
 use tempfile::NamedTempFile;
 
 fn run_cli(db_path: &str, args: &[&str]) -> (bool, String, String) {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_timetrack"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_upptagen"));
     command.arg("--db-path").arg(db_path);
     command.args(args);
 
@@ -76,11 +76,20 @@ fn test_cli_full_workflow() {
     assert!(stdout.contains("ProjectX"));
     assert!(stdout.contains("ProjectY"));
 
-    // 7. Filter by project
+    // 7. Edit entry 1
+    let (ok, stdout, stderr) = run_cli(
+        &db_path,
+        &["edit", "1", "--project", "EditedProjectX", "--description", "Updated setup"],
+    );
+    assert!(ok, "Edit failed: {}", stderr);
+    assert!(stdout.contains("updated successfully"));
+
+    // 8. Filter by project
     let (ok, stdout, stderr) = run_cli(&db_path, &["list", "--project", "ProjectY"]);
     assert!(ok, "List filter failed: {}", stderr);
     assert!(stdout.contains("ProjectY"));
     assert!(!stdout.contains("ProjectX"));
+    assert!(!stdout.contains("EditedProjectX"));
 
     // 8. List tags
     let (ok, stdout, stderr) = run_cli(&db_path, &["tags"]);
@@ -100,11 +109,13 @@ fn test_cli_full_workflow() {
     assert!(csv_content.contains("ProjectY"));
 
     // 10. Export to PDF (LaTeX)
-    let temp_pdf_dir = tempfile::tempdir().unwrap();
-    let pdf_path = temp_pdf_dir.path().join("out.pdf").to_str().unwrap().to_string();
-    let (ok, stdout, stderr) = run_cli(&db_path, &["export", "--format", "pdf", "--output", &pdf_path]);
-    assert!(ok, "Export PDF failed: {}\nstdout: {}", stderr, stdout);
-    assert!(stdout.contains("Exported 2 entries to PDF"));
+    if Command::new("pdflatex").arg("--version").output().is_ok() {
+        let temp_pdf_dir = tempfile::tempdir().unwrap();
+        let pdf_path = temp_pdf_dir.path().join("out.pdf").to_str().unwrap().to_string();
+        let (ok, stdout, stderr) = run_cli(&db_path, &["export", "--format", "pdf", "--output", &pdf_path]);
+        assert!(ok, "Export PDF failed: {}\nstdout: {}", stderr, stdout);
+        assert!(stdout.contains("Exported 2 entries to PDF"));
+    }
 
     // 11. Delete entry
     let (ok, stdout, stderr) = run_cli(&db_path, &["delete", "1"]);

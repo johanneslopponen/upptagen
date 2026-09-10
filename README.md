@@ -1,4 +1,4 @@
-# timetrack
+# upptagen
 
 A fast, feature-rich CLI and Web time tracking application written in Rust, using SQLite for local datastore storage.
 
@@ -21,49 +21,54 @@ cargo build --release
 
 ### Start a Live Timer
 ```bash
-timetrack start "Implementing new feature" --project "CoreApp" --tags "rust,backend"
+upptagen start "Implementing new feature" --project "CoreApp" --tags "rust,backend"
 ```
 
 ### Check Active Timer Status
 ```bash
-timetrack status
+upptagen status
 ```
 
 ### Stop Active Timer
 ```bash
-timetrack stop "Finished implementing feature" --tags "done"
+upptagen stop "Finished implementing feature" --tags "done"
 ```
 
 ### Add Manual Entry Retroactively
 ```bash
-timetrack add --start "2025-01-01 09:00:00" --end "2025-01-01 11:30:00" --project "Docs" --description "Writing documentation" --tags "docs"
+upptagen add --start "2025-01-01 09:00:00" --end "2025-01-01 11:30:00" --project "Docs" --description "Writing documentation" --tags "docs"
+```
+
+### Edit Entry
+```bash
+upptagen edit <ENTRY_ID> --description "Updated description" --tags "updated"
 ```
 
 ### List Entries
 ```bash
-timetrack list
-timetrack list --project "CoreApp" --tag "rust"
+upptagen list
+upptagen list --project "CoreApp" --tag "rust"
 ```
 
 ### View Tag Statistics
 ```bash
-timetrack tags
+upptagen tags
 ```
 
 ### Delete Entry
 ```bash
-timetrack delete <ENTRY_ID>
+upptagen delete <ENTRY_ID>
 ```
 
 ### Export Logs (CSV or PDF)
 ```bash
-timetrack export --format csv --output report.csv
-timetrack export --format pdf --output report.pdf
+upptagen export --format csv --output report.csv
+upptagen export --format pdf --output report.pdf
 ```
 
 ### Launch Web Server Dashboard
 ```bash
-timetrack serve --port 3000
+upptagen serve --port 3000
 ```
 Then navigate to `http://localhost:3000` in your web browser.
 
