@@ -1,10 +1,13 @@
 package com.upptagen.app.ui.viewmodel
 
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.upptagen.app.data.model.ActiveTimerEntity
 import com.upptagen.app.data.repository.TimeTrackingRepository
+import com.upptagen.app.service.TimerService
 import com.upptagen.app.util.DateTimeUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
@@ -21,8 +24,9 @@ data class TimerUiState(
 )
 
 class TimerViewModel(
-    private val repository: TimeTrackingRepository
-) : ViewModel() {
+    private val repository: TimeTrackingRepository,
+    application: Application
+) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(TimerUiState())
     val uiState: StateFlow<TimerUiState> = _uiState.asStateFlow()
@@ -61,6 +65,7 @@ class TimerViewModel(
                 tags = tags
             )
             result.onSuccess {
+                TimerService.startService(getApplication())
                 _uiState.update { it.copy(isLoading = false, successMessage = "Timer started!") }
             }.onFailure { err ->
                 _uiState.update { it.copy(isLoading = false, errorMessage = err.message) }
@@ -111,10 +116,13 @@ class TimerViewModel(
         _uiState.update { it.copy(errorMessage = null, successMessage = null) }
     }
 
-    class Factory(private val repository: TimeTrackingRepository) : ViewModelProvider.Factory {
+    class Factory(
+        private val repository: TimeTrackingRepository,
+        private val application: Application
+    ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return TimerViewModel(repository) as T
+            return TimerViewModel(repository, application) as T
         }
     }
 }

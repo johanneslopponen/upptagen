@@ -1,7 +1,9 @@
 package com.upptagen.app.util
 
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -64,5 +66,39 @@ object DateTimeUtils {
         val instant = parseIsoOrFlexible(isoString) ?: return isoString
         val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.getDefault())
         return instant.atZone(ZoneId.systemDefault()).format(formatter)
+    }
+
+    fun formatDate(date: LocalDate): String {
+        val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.getDefault())
+        return date.format(formatter)
+    }
+
+    fun formatTime(time: LocalTime): String {
+        val formatter = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())
+        return time.format(formatter)
+    }
+
+    fun formatDisplayDateFriendly(date: LocalDate): String {
+        val today = LocalDate.now()
+        return when (date) {
+            today -> "Today (${formatDate(date)})"
+            today.minusDays(1) -> "Yesterday (${formatDate(date)})"
+            else -> formatDate(date)
+        }
+    }
+
+    fun parseTimeOrNull(input: String): LocalTime? {
+        val trimmed = input.trim()
+        val formatters = listOf(
+            DateTimeFormatter.ofPattern("HH:mm", Locale.US),
+            DateTimeFormatter.ofPattern("H:mm", Locale.US),
+            DateTimeFormatter.ofPattern("HH:mm:ss", Locale.US)
+        )
+        for (formatter in formatters) {
+            try {
+                return LocalTime.parse(trimmed, formatter)
+            } catch (_: Exception) { }
+        }
+        return null
     }
 }

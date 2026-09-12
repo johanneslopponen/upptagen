@@ -1,5 +1,6 @@
 package com.upptagen.app.ui
 
+import android.app.Application
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -13,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,7 +42,10 @@ enum class NavigationTab(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UpptagenMainApp(repository: TimeTrackingRepository) {
-    val timerViewModel: TimerViewModel = viewModel(factory = TimerViewModel.Factory(repository))
+    val context = LocalContext.current
+    val application = context.applicationContext as Application
+
+    val timerViewModel: TimerViewModel = viewModel(factory = TimerViewModel.Factory(repository, application))
     val entriesViewModel: EntriesViewModel = viewModel(factory = EntriesViewModel.Factory(repository))
     val tagsViewModel: TagsViewModel = viewModel(factory = TagsViewModel.Factory(repository))
 
@@ -58,7 +63,7 @@ fun UpptagenMainApp(repository: TimeTrackingRepository) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "upptagen",
+                            text = "Upptagen",
                             fontWeight = FontWeight.Black,
                             letterSpacing = 1.sp
                         )
