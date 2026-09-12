@@ -66,11 +66,21 @@ upptagen export --format csv --output report.csv
 upptagen export --format pdf --output report.pdf
 ```
 
+### Import Logs (CSV)
+Import logs exported from another instance or the Android companion app:
+```bash
+upptagen import --path report.csv
+```
+
 ### Launch Web Server Dashboard
 ```bash
 upptagen serve --port 3000
 ```
 Then navigate to `http://localhost:3000` in your web browser.
+
+## Mobile App (Android)
+
+A native Android companion app is available in [`android/`](file:///home/johannes/upptagen/android). It lets you start/stop timers, log manual hours, and tag tasks on your phone, then export a CSV to import into the desktop CLI with automatic deduplication. See [android/README.md](file:///home/johannes/upptagen/android/README.md) for build instructions.
 
 ## Testing
 

@@ -1,1 +1,13 @@
 /target
+
+# Android
+.gradle/
+build/
+android/build/
+android/app/build/
+android/.gradle/
+*.apk
+*.aab
+local.properties
+.idea/
+*.iml
