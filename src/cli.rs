@@ -121,6 +121,12 @@ pub enum Commands {
         to: Option<String>,
     },
 
+    #[command(about = "Import time entries from a CSV file")]
+    Import {
+        #[arg(short, long, help = "Path to the CSV file to import from")]
+        path: String,
+    },
+
     #[command(about = "Start local web server with UI dashboard")]
     Serve {
         #[arg(short, long, default_value_t = 3000, help = "Port to listen on")]

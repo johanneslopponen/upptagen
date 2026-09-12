@@ -1,6 +1,7 @@
 mod cli;
 mod db;
 mod export;
+mod import;
 mod models;
 mod utils;
 mod web;
@@ -343,6 +344,16 @@ async fn main() {
                 }
                 other => {
                     eprintln!("Unsupported export format: {}. Use 'csv' or 'pdf'.", other);
+                    process::exit(1);
+                }
+            }
+        }
+
+        Commands::Import { path } => {
+            match import::import_csv(&db, &path) {
+                Ok(count) => println!("✅ Successfully imported {} entries from {}.", count, path),
+                Err(e) => {
+                    eprintln!("Error importing from CSV: {}", e);
                     process::exit(1);
                 }
             }
