@@ -1,6 +1,7 @@
 use crate::models::{ActiveTimer, EntryFilter, TagStat, TimeEntry};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, Result as SqliteResult};
+use std::collections::HashMap;
 use std::path::Path;
 
 pub struct Database {
@@ -279,7 +280,7 @@ impl Database {
             })
             .map_err(|e| e.to_string())?;
 
-        let mut entries = Vec::new();
+        let mut raw_entries = Vec::new();
         for row in entry_rows {
             let (id, project, description, start_time_str, end_time_str, duration_seconds) =
                 row.map_err(|e| e.to_string())?;
@@ -291,8 +292,19 @@ impl Database {
                 .map(|dt| dt.with_timezone(&Utc))
                 .map_err(|e| e.to_string())?;
 
-            let tags = self.get_tags_for_entry(id)?;
+            raw_entries.push((id, project, description, start_time, end_time, duration_seconds));
+        }
 
+        if raw_entries.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let entry_ids: Vec<i64> = raw_entries.iter().map(|e| e.0).collect();
+        let mut tags_map = self.get_tags_for_entries(&entry_ids)?;
+
+        let mut entries = Vec::with_capacity(raw_entries.len());
+        for (id, project, description, start_time, end_time, duration_seconds) in raw_entries {
+            let tags = tags_map.remove(&id).unwrap_or_default();
             entries.push(TimeEntry {
                 id,
                 project,
@@ -305,6 +317,44 @@ impl Database {
         }
 
         Ok(entries)
+    }
+
+    fn get_tags_for_entries(&self, entry_ids: &[i64]) -> Result<HashMap<i64, Vec<String>>, String> {
+        let mut map: HashMap<i64, Vec<String>> = HashMap::new();
+        if entry_ids.is_empty() {
+            return Ok(map);
+        }
+
+        for chunk in entry_ids.chunks(500) {
+            let placeholders = vec!["?"; chunk.len()].join(",");
+            let query = format!(
+                "SELECT et.entry_id, t.name
+                 FROM tags t
+                 JOIN entry_tags et ON t.id = et.tag_id
+                 WHERE et.entry_id IN ({})
+                 ORDER BY et.entry_id, t.name ASC",
+                placeholders
+            );
+
+            let mut stmt = self.conn.prepare(&query).map_err(|e| e.to_string())?;
+            let params: Vec<&dyn rusqlite::ToSql> =
+                chunk.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+
+            let rows = stmt
+                .query_map(params.as_slice(), |row| {
+                    let entry_id: i64 = row.get(0)?;
+                    let tag_name: String = row.get(1)?;
+                    Ok((entry_id, tag_name))
+                })
+                .map_err(|e| e.to_string())?;
+
+            for r in rows {
+                let (entry_id, tag_name) = r.map_err(|e| e.to_string())?;
+                map.entry(entry_id).or_default().push(tag_name);
+            }
+        }
+
+        Ok(map)
     }
 
     fn get_tags_for_entry(&self, entry_id: i64) -> Result<Vec<String>, String> {
