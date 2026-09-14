@@ -196,35 +196,53 @@ impl Database {
     }
 
     fn associate_tags(&self, entry_id: i64, tags: &[String]) -> Result<(), String> {
-        for tag_name in tags {
-            let clean_tag = tag_name.trim();
-            if clean_tag.is_empty() {
-                continue;
-            }
+        let mut clean_tags: Vec<&str> = tags
+            .iter()
+            .map(|t| t.trim())
+            .filter(|t| !t.is_empty())
+            .collect();
 
-            self.conn
-                .execute(
-                    "INSERT OR IGNORE INTO tags (name) VALUES (?1)",
-                    params![clean_tag],
-                )
-                .map_err(|e| e.to_string())?;
-
-            let tag_id: i64 = self
-                .conn
-                .query_row(
-                    "SELECT id FROM tags WHERE name = ?1",
-                    params![clean_tag],
-                    |row| row.get(0),
-                )
-                .map_err(|e| e.to_string())?;
-
-            self.conn
-                .execute(
-                    "INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) VALUES (?1, ?2)",
-                    params![entry_id, tag_id],
-                )
-                .map_err(|e| e.to_string())?;
+        if clean_tags.is_empty() {
+            return Ok(());
         }
+
+        clean_tags.sort_unstable();
+        clean_tags.dedup();
+
+        // Query 1: Batch insert all tags into `tags` table in a single multi-row insert query
+        let placeholders = (1..=clean_tags.len())
+            .map(|i| format!("(?{})", i))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let query_tags = format!("INSERT OR IGNORE INTO tags (name) VALUES {}", placeholders);
+        let tag_params: Vec<&dyn rusqlite::ToSql> =
+            clean_tags.iter().map(|t| t as &dyn rusqlite::ToSql).collect();
+
+        self.conn
+            .execute(&query_tags, rusqlite::params_from_iter(tag_params.iter()))
+            .map_err(|e| e.to_string())?;
+
+        // Query 2: Batch insert all entry-tag links in a single `INSERT ... SELECT` query
+        let in_placeholders = (2..=clean_tags.len() + 1)
+            .map(|i| format!("?{}", i))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let query_entry_tags = format!(
+            "INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) SELECT ?1, id FROM tags WHERE name IN ({})",
+            in_placeholders
+        );
+
+        let entry_id_param = &entry_id as &dyn rusqlite::ToSql;
+        let mut entry_params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(clean_tags.len() + 1);
+        entry_params.push(entry_id_param);
+        for tag in &clean_tags {
+            entry_params.push(tag as &dyn rusqlite::ToSql);
+        }
+
+        self.conn
+            .execute(&query_entry_tags, rusqlite::params_from_iter(entry_params.iter()))
+            .map_err(|e| e.to_string())?;
+
         Ok(())
     }
 
@@ -574,5 +592,28 @@ mod tests {
         assert!(deleted);
         let after_delete = db.list_entries(&EntryFilter::default()).unwrap();
         assert_eq!(after_delete.len(), 1);
+    }
+
+    #[test]
+    #[ignore]
+    fn bench_associate_tags() {
+        let db = Database::open_in_memory().unwrap();
+        let now = Utc::now();
+
+        let tags: Vec<String> = (0..50).map(|i| format!("tag_{}", i)).collect();
+
+        let start = std::time::Instant::now();
+        for _ in 0..100 {
+            db.add_entry(
+                Some("Bench Project".into()),
+                Some("Bench Task".into()),
+                now,
+                now + chrono::Duration::seconds(60),
+                tags.clone(),
+            )
+            .unwrap();
+        }
+        let elapsed = start.elapsed();
+        println!("bench_associate_tags elapsed: {:?}", elapsed);
     }
 }
