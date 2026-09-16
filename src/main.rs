@@ -14,7 +14,7 @@ use export::pdf::export_pdf;
 use models::EntryFilter;
 use std::process;
 use std::sync::{Arc, Mutex};
-use utils::{format_duration, parse_datetime};
+use utils::{format_duration, format_local_datetime, format_local_datetime_seconds, parse_datetime};
 
 #[tokio::main]
 async fn main() {
@@ -50,7 +50,7 @@ async fn main() {
                 if !timer.tags.is_empty() {
                     println!("   Tags:        {}", timer.tags.join(", "));
                 }
-                println!("   Start time:  {}", timer.start_time.format("%Y-%m-%d %H:%M:%S UTC"));
+                println!("   Start time:  {}", format_local_datetime_seconds(&timer.start_time));
             }
             Err(e) => {
                 eprintln!("Error starting timer: {}", e);
@@ -86,7 +86,7 @@ async fn main() {
                 println!("   Project:     {}", timer.project.as_deref().unwrap_or("Unassigned"));
                 println!("   Description: {}", timer.description.as_deref().unwrap_or("No description"));
                 println!("   Elapsed:     {}", format_duration(elapsed));
-                println!("   Start time:  {}", timer.start_time.format("%Y-%m-%d %H:%M:%S UTC"));
+                println!("   Start time:  {}", format_local_datetime_seconds(&timer.start_time));
                 if !timer.tags.is_empty() {
                     println!("   Tags:        {}", timer.tags.join(", "));
                 }
@@ -240,7 +240,7 @@ async fn main() {
                         total_secs += e.duration_seconds;
                         let proj = e.project.as_deref().unwrap_or("-");
                         let desc = e.description.as_deref().unwrap_or("-");
-                        let start_str = e.start_time.format("%Y-%m-%d %H:%M").to_string();
+                        let start_str = format_local_datetime(&e.start_time);
                         let dur_str = format_duration(e.duration_seconds);
                         let tags_str = e.tags.join(",");
 

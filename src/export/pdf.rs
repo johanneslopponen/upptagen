@@ -1,5 +1,5 @@
 use crate::models::TimeEntry;
-use crate::utils::format_duration;
+use crate::utils::{format_duration, format_local_datetime};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -124,7 +124,7 @@ pub fn generate_latex_source(entries: &[TimeEntry]) -> String {
     for entry in entries {
         let proj = entry.project.as_deref().unwrap_or("-");
         let desc = entry.description.as_deref().unwrap_or("-");
-        let start_fmt = entry.start_time.format("%Y-%m-%d %H:%M").to_string();
+        let start_fmt = format_local_datetime(&entry.start_time);
         let dur_fmt = format_duration(entry.duration_seconds);
         let tags_fmt = if entry.tags.is_empty() {
             "-".to_string()

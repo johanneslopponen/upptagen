@@ -39,8 +39,10 @@ pub fn import_csv<P: AsRef<Path>>(db: &Database, path: P) -> Result<usize, Strin
     for result in rdr.deserialize() {
         let record: CsvEntry = result.map_err(|e| format!("Failed to parse CSV row: {}", e))?;
 
-        let start_time: DateTime<Utc> = record.start_time.parse().map_err(|e| format!("Invalid start time '{}': {}", record.start_time, e))?;
-        let end_time: DateTime<Utc> = record.end_time.parse().map_err(|e| format!("Invalid end time '{}': {}", record.end_time, e))?;
+        let start_time = crate::utils::parse_datetime(&record.start_time)
+            .map_err(|e| format!("Invalid start time '{}': {}", record.start_time, e))?;
+        let end_time = crate::utils::parse_datetime(&record.end_time)
+            .map_err(|e| format!("Invalid end time '{}': {}", record.end_time, e))?;
 
         let tags_vec: Vec<String> = record.tags.unwrap_or_default()
             .split(',')
