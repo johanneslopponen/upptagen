@@ -76,7 +76,7 @@ pub fn generate_latex_source(entries: &[TimeEntry]) -> String {
         tex.push_str("\\midrule\n");
 
         let mut proj_list: Vec<_> = project_durations.into_iter().collect();
-        proj_list.sort_by(|a, b| b.1.cmp(&a.1));
+        proj_list.sort_by_key(|item| std::cmp::Reverse(item.1));
 
         for (proj, dur) in proj_list {
             tex.push_str(&format!(
@@ -98,7 +98,7 @@ pub fn generate_latex_source(entries: &[TimeEntry]) -> String {
         tex.push_str("\\midrule\n");
 
         let mut tag_list: Vec<_> = tag_durations.into_iter().collect();
-        tag_list.sort_by(|a, b| b.1.cmp(&a.1));
+        tag_list.sort_by_key(|item| std::cmp::Reverse(item.1));
 
         for (tag, dur) in tag_list {
             tex.push_str(&format!(
@@ -167,7 +167,12 @@ pub fn export_pdf<P: AsRef<Path>>(entries: &[TimeEntry], output_path: P) -> Resu
         .arg(format!("-output-directory={}", output_dir.display()))
         .arg(&tex_file_path)
         .status()
-        .map_err(|e| format!("Failed to execute pdflatex: {}. Ensure LaTeX is installed.", e))?;
+        .map_err(|e| {
+            format!(
+                "Failed to execute pdflatex: {}. Ensure LaTeX is installed.",
+                e
+            )
+        })?;
 
     if !status.success() {
         let log_file = output_dir.join("report.log");

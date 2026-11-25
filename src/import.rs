@@ -1,5 +1,4 @@
 use crate::db::Database;
-use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use std::path::Path;
 
@@ -24,16 +23,25 @@ struct CsvEntry {
 }
 
 pub fn import_csv<P: AsRef<Path>>(db: &Database, path: P) -> Result<usize, String> {
-    let mut rdr = csv::Reader::from_path(path).map_err(|e| format!("Failed to open CSV file: {}", e))?;
+    let mut rdr =
+        csv::Reader::from_path(path).map_err(|e| format!("Failed to open CSV file: {}", e))?;
     let mut count = 0;
 
-    let existing_entries = db.list_entries(&crate::models::EntryFilter::default()).unwrap_or_default();
+    let existing_entries = db
+        .list_entries(&crate::models::EntryFilter::default())
+        .unwrap_or_default();
     let mut seen = std::collections::HashSet::new();
 
     for e in existing_entries {
         let mut sorted_tags = e.tags.clone();
         sorted_tags.sort();
-        seen.insert((e.project, e.description, e.start_time.timestamp(), e.end_time.timestamp(), sorted_tags));
+        seen.insert((
+            e.project,
+            e.description,
+            e.start_time.timestamp(),
+            e.end_time.timestamp(),
+            sorted_tags,
+        ));
     }
 
     for result in rdr.deserialize() {
@@ -44,7 +52,9 @@ pub fn import_csv<P: AsRef<Path>>(db: &Database, path: P) -> Result<usize, Strin
         let end_time = crate::utils::parse_datetime(&record.end_time)
             .map_err(|e| format!("Invalid end time '{}': {}", record.end_time, e))?;
 
-        let tags_vec: Vec<String> = record.tags.unwrap_or_default()
+        let tags_vec: Vec<String> = record
+            .tags
+            .unwrap_or_default()
             .split(',')
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
@@ -63,7 +73,13 @@ pub fn import_csv<P: AsRef<Path>>(db: &Database, path: P) -> Result<usize, Strin
         let mut sorted_tags = tags_vec.clone();
         sorted_tags.sort();
 
-        let key = (project.clone(), description.clone(), start_time.timestamp(), end_time.timestamp(), sorted_tags);
+        let key = (
+            project.clone(),
+            description.clone(),
+            start_time.timestamp(),
+            end_time.timestamp(),
+            sorted_tags,
+        );
 
         if seen.contains(&key) {
             continue;
@@ -81,8 +97,8 @@ pub fn import_csv<P: AsRef<Path>>(db: &Database, path: P) -> Result<usize, Strin
 mod tests {
     use super::*;
     use crate::db::Database;
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_import_csv() {
@@ -100,9 +116,14 @@ mod tests {
         let imported = import_csv(&db, path).unwrap();
         assert_eq!(imported, 2);
 
-        let mut entries = db.list_entries(&crate::models::EntryFilter {
-            project: None, tag: None, from_date: None, to_date: None
-        }).unwrap();
+        let mut entries = db
+            .list_entries(&crate::models::EntryFilter {
+                project: None,
+                tag: None,
+                from_date: None,
+                to_date: None,
+            })
+            .unwrap();
 
         assert_eq!(entries.len(), 2);
 
@@ -137,7 +158,9 @@ mod tests {
         // Only Task 3 should be imported, Task 1 should be skipped
         assert_eq!(imported_again, 1);
 
-        let total_entries = db.list_entries(&crate::models::EntryFilter::default()).unwrap();
+        let total_entries = db
+            .list_entries(&crate::models::EntryFilter::default())
+            .unwrap();
         assert_eq!(total_entries.len(), 3);
     }
 }

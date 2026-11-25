@@ -1,6 +1,6 @@
 use crate::models::{ActiveTimer, EntryFilter, TagStat, TimeEntry};
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection, Result as SqliteResult};
+use rusqlite::{params, Connection, Result as SqliteResult, Transaction, TransactionBehavior};
 use std::path::Path;
 
 pub struct Database {
@@ -22,6 +22,7 @@ impl Database {
         Self::new(conn)
     }
 
+    #[cfg(test)]
     pub fn open_in_memory() -> SqliteResult<Self> {
         let conn = Connection::open_in_memory()?;
         Self::new(conn)
@@ -77,8 +78,14 @@ impl Database {
         description: Option<String>,
         tags: Vec<String>,
     ) -> Result<ActiveTimer, String> {
-        if self.get_active_timer().map_err(|e| e.to_string())?.is_some() {
-            return Err("A timer is already running. Please stop it before starting a new one.".into());
+        if self
+            .get_active_timer()
+            .map_err(|e| e.to_string())?
+            .is_some()
+        {
+            return Err(
+                "A timer is already running. Please stop it before starting a new one.".into(),
+            );
         }
 
         let start_time = Utc::now();
@@ -115,7 +122,13 @@ impl Database {
 
             let start_time = DateTime::parse_from_rfc3339(&start_time_str)
                 .map(|dt| dt.with_timezone(&Utc))
-                .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?;
+                .map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?;
 
             let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
 
@@ -136,6 +149,10 @@ impl Database {
         override_description: Option<String>,
         additional_tags: Vec<String>,
     ) -> Result<TimeEntry, String> {
+        // Acquire the write lock before reading: another CLI process must not stop
+        // the same timer between this read and the final delete.
+        let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)
+            .map_err(|e| e.to_string())?;
         let timer = self
             .get_active_timer()
             .map_err(|e| e.to_string())?
@@ -156,6 +173,7 @@ impl Database {
             .execute("DELETE FROM active_timer WHERE id = 1", [])
             .map_err(|e| e.to_string())?;
 
+        transaction.commit().map_err(|e| e.to_string())?;
         Ok(entry)
     }
 
@@ -275,7 +293,14 @@ impl Database {
                 let end_time_str: String = row.get(4)?;
                 let duration_seconds: i64 = row.get(5)?;
 
-                Ok((id, project, description, start_time_str, end_time_str, duration_seconds))
+                Ok((
+                    id,
+                    project,
+                    description,
+                    start_time_str,
+                    end_time_str,
+                    duration_seconds,
+                ))
             })
             .map_err(|e| e.to_string())?;
 
@@ -476,6 +501,56 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_timer_stop_rolls_back_entry_and_keeps_timer_for_retry() {
+        let db = Database::open_in_memory().unwrap();
+        db.start_timer(Some("Rust".into()), None, vec!["ownership".into()])
+            .unwrap();
+        db.conn
+            .execute_batch(
+                "CREATE TRIGGER fail_clear_timer BEFORE DELETE ON active_timer
+             BEGIN SELECT RAISE(ABORT, 'simulated failure'); END;",
+            )
+            .unwrap();
+        assert!(db.stop_timer(None, vec![]).is_err());
+        assert!(db.list_entries(&EntryFilter::default()).unwrap().is_empty());
+        assert!(db.list_tags().unwrap().is_empty());
+        assert!(db.get_active_timer().unwrap().is_some());
+        db.conn
+            .execute_batch("DROP TRIGGER fail_clear_timer;")
+            .unwrap();
+        db.stop_timer(None, vec![]).unwrap();
+        assert!(db.stop_timer(None, vec![]).is_err());
+        assert_eq!(db.list_entries(&EntryFilter::default()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn concurrent_stops_save_exactly_one_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("timer.db");
+        let db = Database::open_file(&path).unwrap();
+        db.start_timer(None, None, vec![]).unwrap();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let workers: Vec<_> = (0..2)
+            .map(|_| {
+                let path = path.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let other = Database::open_file(path).unwrap();
+                    barrier.wait();
+                    other.stop_timer(None, vec![]).is_ok()
+                })
+            })
+            .collect();
+        let successes = workers
+            .into_iter()
+            .filter_map(|worker| worker.join().unwrap().then_some(()))
+            .count();
+        assert_eq!(successes, 1);
+        assert_eq!(db.list_entries(&EntryFilter::default()).unwrap().len(), 1);
+        assert!(db.get_active_timer().unwrap().is_none());
+    }
 
     #[test]
     fn test_database_operations() {

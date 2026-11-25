@@ -31,6 +31,8 @@ This app allows you to quickly log working hours on the go—starting and stoppi
   - Save file directly to device storage via Android Storage Access Framework.
 - **📥 Import Support**:
   - Import existing CSV logs into Android with automatic deduplication.
+  - Quoted fields can contain commas, quotes, and line breaks.
+  - Invalid rows fail with a record number; the entire import is rolled back.
 
 ---
 

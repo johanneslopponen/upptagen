@@ -48,6 +48,35 @@ object DateTimeUtils {
         return null
     }
 
+    // Preserve the original instant (including seconds and the DST offset) for
+    // each unchanged field. Keep the end date when editing multi-day sessions.
+    fun editedEntryTimes(
+        originalStart: Instant,
+        originalEnd: Instant,
+        selectedDate: LocalDate,
+        startTime: LocalTime,
+        endTime: LocalTime,
+        zone: ZoneId = ZoneId.systemDefault()
+    ): Pair<Instant, Instant> {
+        val oldStart = originalStart.atZone(zone)
+        val oldEnd = originalEnd.atZone(zone)
+        val dayShift = java.time.temporal.ChronoUnit.DAYS.between(oldStart.toLocalDate(), selectedDate)
+        val start = if (dayShift == 0L && startTime == oldStart.toLocalTime()) {
+            originalStart
+        } else {
+            LocalDateTime.of(selectedDate, startTime).atZone(zone).toInstant()
+        }
+        val end = if (dayShift == 0L && endTime == oldEnd.toLocalTime()) {
+            originalEnd
+        } else {
+            var localEnd = LocalDateTime.of(oldEnd.toLocalDate().plusDays(dayShift), endTime)
+            if (localEnd.isBefore(start.atZone(zone).toLocalDateTime())) localEnd = localEnd.plusDays(1)
+            localEnd.atZone(zone).toInstant()
+        }
+        val adjustedEnd = if (end.isBefore(start)) end.atZone(zone).plusDays(1).toInstant() else end
+        return start to adjustedEnd
+    }
+
     fun formatDuration(seconds: Long): String {
         val s = if (seconds < 0) 0 else seconds
         val hours = s / 3600

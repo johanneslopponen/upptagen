@@ -5,7 +5,7 @@ use std::path::Path;
 pub fn export_csv<P: AsRef<Path>>(entries: &[TimeEntry], output_path: P) -> Result<(), String> {
     let mut wtr = csv::Writer::from_path(output_path).map_err(|e| e.to_string())?;
 
-    wtr.write_record(&[
+    wtr.write_record([
         "ID",
         "Project",
         "Description",
@@ -19,7 +19,7 @@ pub fn export_csv<P: AsRef<Path>>(entries: &[TimeEntry], output_path: P) -> Resu
 
     for entry in entries {
         let tags_str = entry.tags.join(",");
-        wtr.write_record(&[
+        wtr.write_record([
             entry.id.to_string(),
             entry.project.clone().unwrap_or_default(),
             entry.description.clone().unwrap_or_default(),

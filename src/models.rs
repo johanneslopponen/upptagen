@@ -35,9 +35,3 @@ pub struct EntryFilter {
     pub from_date: Option<DateTime<Utc>>,
     pub to_date: Option<DateTime<Utc>>,
 }
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum ExportFormat {
-    Csv,
-    Pdf,
-}

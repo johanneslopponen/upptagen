@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
 #[command(name = "upptagen")]
-#[command(about = "A CLI and Web time tracking application in Rust", long_about = None)]
+#[command(about = "A CLI time tracking application in Rust", long_about = None)]
 pub struct Cli {
     #[arg(long, global = true, help = "Path to SQLite database file")]
     pub db_path: Option<String>,
@@ -21,7 +21,12 @@ pub enum Commands {
         #[arg(short, long, help = "Project name")]
         project: Option<String>,
 
-        #[arg(short, long, value_delimiter = ',', help = "Comma-separated list of tags")]
+        #[arg(
+            short,
+            long,
+            value_delimiter = ',',
+            help = "Comma-separated list of tags"
+        )]
         tags: Vec<String>,
     },
 
@@ -36,13 +41,26 @@ pub enum Commands {
         #[arg(short, long, help = "New task description")]
         description: Option<String>,
 
-        #[arg(short, long, help = "New start time (e.g. '2025-01-01T10:00:00Z' or '2025-01-01 10:00:00')")]
+        #[arg(
+            short,
+            long,
+            help = "New start time (e.g. '2025-01-01T10:00:00Z' or '2025-01-01 10:00:00')"
+        )]
         start: Option<String>,
 
-        #[arg(short, long, help = "New end time (e.g. '2025-01-01T10:00:00Z' or '2025-01-01 10:00:00')")]
+        #[arg(
+            short,
+            long,
+            help = "New end time (e.g. '2025-01-01T10:00:00Z' or '2025-01-01 10:00:00')"
+        )]
         end: Option<String>,
 
-        #[arg(short, long, value_delimiter = ',', help = "New comma-separated list of tags")]
+        #[arg(
+            short,
+            long,
+            value_delimiter = ',',
+            help = "New comma-separated list of tags"
+        )]
         tags: Option<Vec<String>>,
     },
 
@@ -60,10 +78,18 @@ pub enum Commands {
 
     #[command(about = "Manually insert a time entry retroactively", alias = "log")]
     Add {
-        #[arg(short, long, help = "Start time (e.g. '2025-01-01T10:00:00Z' or '2025-01-01 10:00:00')")]
+        #[arg(
+            short,
+            long,
+            help = "Start time (e.g. '2025-01-01T10:00:00Z' or '2025-01-01 10:00:00')"
+        )]
         start: String,
 
-        #[arg(short, long, help = "End time (e.g. '2025-01-01T10:00:00Z' or '2025-01-01 10:00:00')")]
+        #[arg(
+            short,
+            long,
+            help = "End time (e.g. '2025-01-01T10:00:00Z' or '2025-01-01 10:00:00')"
+        )]
         end: String,
 
         #[arg(short, long, help = "Project name")]
@@ -72,7 +98,12 @@ pub enum Commands {
         #[arg(short, long, help = "Task description")]
         description: Option<String>,
 
-        #[arg(short, long, value_delimiter = ',', help = "Comma-separated list of tags")]
+        #[arg(
+            short,
+            long,
+            value_delimiter = ',',
+            help = "Comma-separated list of tags"
+        )]
         tags: Vec<String>,
     },
 
@@ -105,7 +136,11 @@ pub enum Commands {
         #[arg(short, long, default_value = "csv", help = "Export format: csv or pdf")]
         format: String,
 
-        #[arg(short, long, help = "Output file path (e.g. summary.csv or report.pdf)")]
+        #[arg(
+            short,
+            long,
+            help = "Output file path (e.g. summary.csv or report.pdf)"
+        )]
         output: String,
 
         #[arg(short, long, help = "Filter by project name")]
@@ -125,11 +160,5 @@ pub enum Commands {
     Import {
         #[arg(short, long, help = "Path to the CSV file to import from")]
         path: String,
-    },
-
-    #[command(about = "Start local web server with UI dashboard")]
-    Serve {
-        #[arg(short, long, default_value_t = 3000, help = "Port to listen on")]
-        port: u16,
     },
 }

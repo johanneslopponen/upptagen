@@ -4,7 +4,6 @@ mod export;
 mod import;
 mod models;
 mod utils;
-mod web;
 
 use clap::Parser;
 use cli::{Cli, Commands};
@@ -13,11 +12,11 @@ use export::csv::export_csv;
 use export::pdf::export_pdf;
 use models::EntryFilter;
 use std::process;
-use std::sync::{Arc, Mutex};
-use utils::{format_duration, format_local_datetime, format_local_datetime_seconds, parse_datetime};
+use utils::{
+    format_duration, format_local_datetime, format_local_datetime_seconds, parse_datetime,
+};
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let cli = Cli::parse();
 
     let db_path = match cli.db_path {
@@ -50,7 +49,10 @@ async fn main() {
                 if !timer.tags.is_empty() {
                     println!("   Tags:        {}", timer.tags.join(", "));
                 }
-                println!("   Start time:  {}", format_local_datetime_seconds(&timer.start_time));
+                println!(
+                    "   Start time:  {}",
+                    format_local_datetime_seconds(&timer.start_time)
+                );
             }
             Err(e) => {
                 eprintln!("Error starting timer: {}", e);
@@ -83,10 +85,19 @@ async fn main() {
             Ok(Some(timer)) => {
                 let elapsed = (chrono::Utc::now() - timer.start_time).num_seconds();
                 println!("⏱️ Active Timer Running");
-                println!("   Project:     {}", timer.project.as_deref().unwrap_or("Unassigned"));
-                println!("   Description: {}", timer.description.as_deref().unwrap_or("No description"));
+                println!(
+                    "   Project:     {}",
+                    timer.project.as_deref().unwrap_or("Unassigned")
+                );
+                println!(
+                    "   Description: {}",
+                    timer.description.as_deref().unwrap_or("No description")
+                );
                 println!("   Elapsed:     {}", format_duration(elapsed));
-                println!("   Start time:  {}", format_local_datetime_seconds(&timer.start_time));
+                println!(
+                    "   Start time:  {}",
+                    format_local_datetime_seconds(&timer.start_time)
+                );
                 if !timer.tags.is_empty() {
                     println!("   Tags:        {}", timer.tags.join(", "));
                 }
@@ -304,11 +315,23 @@ async fn main() {
             to,
         } => {
             let from_date = match from {
-                Some(ref f) => parse_datetime(f).ok(),
+                Some(ref f) => match parse_datetime(f) {
+                    Ok(dt) => Some(dt),
+                    Err(e) => {
+                        eprintln!("Invalid --from date: {}", e);
+                        process::exit(1);
+                    }
+                },
                 None => None,
             };
             let to_date = match to {
-                Some(ref t) => parse_datetime(t).ok(),
+                Some(ref t) => match parse_datetime(t) {
+                    Ok(dt) => Some(dt),
+                    Err(e) => {
+                        eprintln!("Invalid --to date: {}", e);
+                        process::exit(1);
+                    }
+                },
                 None => None,
             };
 
@@ -333,14 +356,22 @@ async fn main() {
                         eprintln!("CSV Export failed: {}", e);
                         process::exit(1);
                     }
-                    println!("📄 Exported {} entries to CSV file: {}", entries.len(), output);
+                    println!(
+                        "📄 Exported {} entries to CSV file: {}",
+                        entries.len(),
+                        output
+                    );
                 }
                 "pdf" => {
                     if let Err(e) = export_pdf(&entries, &output) {
                         eprintln!("PDF Export failed: {}", e);
                         process::exit(1);
                     }
-                    println!("📄 Exported {} entries to PDF file: {}", entries.len(), output);
+                    println!(
+                        "📄 Exported {} entries to PDF file: {}",
+                        entries.len(),
+                        output
+                    );
                 }
                 other => {
                     eprintln!("Unsupported export format: {}. Use 'csv' or 'pdf'.", other);
@@ -349,22 +380,12 @@ async fn main() {
             }
         }
 
-        Commands::Import { path } => {
-            match import::import_csv(&db, &path) {
-                Ok(count) => println!("✅ Successfully imported {} entries from {}.", count, path),
-                Err(e) => {
-                    eprintln!("Error importing from CSV: {}", e);
-                    process::exit(1);
-                }
-            }
-        }
-
-        Commands::Serve { port } => {
-            let shared_db = Arc::new(Mutex::new(db));
-            if let Err(e) = web::run_server(shared_db, port).await {
-                eprintln!("Web server error: {}", e);
+        Commands::Import { path } => match import::import_csv(&db, &path) {
+            Ok(count) => println!("✅ Successfully imported {} entries from {}.", count, path),
+            Err(e) => {
+                eprintln!("Error importing from CSV: {}", e);
                 process::exit(1);
             }
-        }
+        },
     }
 }

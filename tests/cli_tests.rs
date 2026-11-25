@@ -79,7 +79,14 @@ fn test_cli_full_workflow() {
     // 7. Edit entry 1
     let (ok, stdout, stderr) = run_cli(
         &db_path,
-        &["edit", "1", "--project", "EditedProjectX", "--description", "Updated setup"],
+        &[
+            "edit",
+            "1",
+            "--project",
+            "EditedProjectX",
+            "--description",
+            "Updated setup",
+        ],
     );
     assert!(ok, "Edit failed: {}", stderr);
     assert!(stdout.contains("updated successfully"));
@@ -101,7 +108,10 @@ fn test_cli_full_workflow() {
     // 9. Export to CSV
     let csv_file = NamedTempFile::new().unwrap();
     let csv_path = csv_file.path().to_str().unwrap().to_string();
-    let (ok, stdout, stderr) = run_cli(&db_path, &["export", "--format", "csv", "--output", &csv_path]);
+    let (ok, stdout, stderr) = run_cli(
+        &db_path,
+        &["export", "--format", "csv", "--output", &csv_path],
+    );
     assert!(ok, "Export CSV failed: {}", stderr);
     assert!(stdout.contains("Exported 2 entries to CSV"));
     let csv_content = std::fs::read_to_string(&csv_path).unwrap();
@@ -111,8 +121,16 @@ fn test_cli_full_workflow() {
     // 10. Export to PDF (LaTeX)
     if Command::new("pdflatex").arg("--version").output().is_ok() {
         let temp_pdf_dir = tempfile::tempdir().unwrap();
-        let pdf_path = temp_pdf_dir.path().join("out.pdf").to_str().unwrap().to_string();
-        let (ok, stdout, stderr) = run_cli(&db_path, &["export", "--format", "pdf", "--output", &pdf_path]);
+        let pdf_path = temp_pdf_dir
+            .path()
+            .join("out.pdf")
+            .to_str()
+            .unwrap()
+            .to_string();
+        let (ok, stdout, stderr) = run_cli(
+            &db_path,
+            &["export", "--format", "pdf", "--output", &pdf_path],
+        );
         assert!(ok, "Export PDF failed: {}\nstdout: {}", stderr, stdout);
         assert!(stdout.contains("Exported 2 entries to PDF"));
     }
@@ -126,4 +144,34 @@ fn test_cli_full_workflow() {
     assert!(ok, "List after delete failed: {}", stderr);
     assert!(!stdout.contains("ProjectX"));
     assert!(stdout.contains("ProjectY"));
+}
+
+#[test]
+fn export_rejects_invalid_dates_without_overwriting_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("entries.db");
+    let output = dir.path().join("report");
+    for format in ["csv", "pdf"] {
+        for flag in ["--from", "--to"] {
+            std::fs::write(&output, "keep existing report").unwrap();
+            let (ok, _, stderr) = run_cli(
+                db_path.to_str().unwrap(),
+                &[
+                    "export",
+                    "--format",
+                    format,
+                    "--output",
+                    output.to_str().unwrap(),
+                    flag,
+                    "not-a-date",
+                ],
+            );
+            assert!(!ok, "Invalid {flag} should fail for {format}");
+            assert!(stderr.contains(&format!("Invalid {flag} date")), "{stderr}");
+            assert_eq!(
+                std::fs::read_to_string(&output).unwrap(),
+                "keep existing report"
+            );
+        }
+    }
 }

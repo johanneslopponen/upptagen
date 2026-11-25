@@ -1,5 +1,6 @@
 package com.upptagen.app.data.repository
 
+import androidx.room.withTransaction
 import com.upptagen.app.data.AppDatabase
 import com.upptagen.app.data.model.ActiveTimerEntity
 import com.upptagen.app.data.model.TagEntity
@@ -7,6 +8,7 @@ import com.upptagen.app.data.model.TagStat
 import com.upptagen.app.data.model.TimeEntryEntity
 import com.upptagen.app.data.model.TimeEntryWithTags
 import com.upptagen.app.util.DateTimeUtils
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import org.json.JSONArray
 import java.time.Instant
@@ -34,60 +36,60 @@ class TimeTrackingRepository(private val db: AppDatabase) {
         description: String?,
         tags: List<String>
     ): Result<ActiveTimerEntity> {
-        val current = activeTimerDao.getActiveTimerSync()
-        if (current != null) {
-            return Result.failure(IllegalStateException("A timer is already running. Please stop it before starting a new one."))
+        return transactionResult {
+            check(activeTimerDao.getActiveTimerSync() == null) {
+                "A timer is already running. Please stop it before starting a new one."
+            }
+            val activeTimer = ActiveTimerEntity(
+                id = 1,
+                project = project?.trim()?.ifEmpty { null },
+                description = description?.trim()?.ifEmpty { null },
+                startTime = DateTimeUtils.nowIso(),
+                tagsJson = tagsToJson(tags.map { it.trim() }.filter { it.isNotEmpty() }.distinct())
+            )
+            activeTimerDao.setActiveTimer(activeTimer)
+            activeTimer
         }
-
-        val cleanProject = project?.trim()?.ifEmpty { null }
-        val cleanDesc = description?.trim()?.ifEmpty { null }
-        val cleanTags = tags.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-
-        val activeTimer = ActiveTimerEntity(
-            id = 1,
-            project = cleanProject,
-            description = cleanDesc,
-            startTime = DateTimeUtils.nowIso(),
-            tagsJson = tagsToJson(cleanTags)
-        )
-        activeTimerDao.setActiveTimer(activeTimer)
-        return Result.success(activeTimer)
     }
 
     suspend fun stopTimer(
         overrideDescription: String? = null,
         additionalTags: List<String> = emptyList()
     ): Result<Long> {
-        val timer = activeTimerDao.getActiveTimerSync()
-            ?: return Result.failure(IllegalStateException("No active timer running."))
+        return transactionResult {
+            val timer = activeTimerDao.getActiveTimerSync()
+                ?: error("No active timer running.")
+            val startInstant = DateTimeUtils.parseIsoOrFlexible(timer.startTime)
+                ?: error("Failed to parse timer start time: ${timer.startTime}")
+            val endInstant = Instant.now()
+            check(!endInstant.isBefore(startInstant)) { "End time cannot be earlier than start time." }
+            val combinedTags = (jsonToTags(timer.tagsJson) + additionalTags.map { it.trim() })
+                .filter { it.isNotEmpty() }
+                .distinct()
+            val entry = TimeEntryEntity(
+                project = timer.project,
+                description = overrideDescription?.trim()?.ifEmpty { null } ?: timer.description,
+                startTime = timer.startTime,
+                endTime = DateTimeUtils.toIso(endInstant),
+                durationSeconds = java.time.Duration.between(startInstant, endInstant).seconds
+            )
+            val entryId = timeEntryDao.insertEntryWithTags(entry, getOrCreateTagIds(combinedTags))
+            activeTimerDao.clearActiveTimer()
+            entryId
+        }
+    }
 
-        val startInstant = DateTimeUtils.parseIsoOrFlexible(timer.startTime)
-            ?: return Result.failure(IllegalStateException("Failed to parse timer start time: ${timer.startTime}"))
-        val endInstant = Instant.now()
+    // CSV imports share one transaction so a failed row cannot leave a partial import.
+    internal suspend fun <T> withTransaction(block: suspend () -> T): T = db.withTransaction { block() }
 
-        val durationSeconds = (endInstant.epochSecond - startInstant.epochSecond).coerceAtLeast(0)
-
-        val finalDesc = overrideDescription?.trim()?.ifEmpty { null }
-            ?: timer.description
-
-        val baseTags = jsonToTags(timer.tagsJson)
-        val combinedTags = (baseTags + additionalTags.map { it.trim() })
-            .filter { it.isNotEmpty() }
-            .distinct()
-
-        val entry = TimeEntryEntity(
-            project = timer.project,
-            description = finalDesc,
-            startTime = timer.startTime,
-            endTime = DateTimeUtils.toIso(endInstant),
-            durationSeconds = durationSeconds
-        )
-
-        val tagIds = getOrCreateTagIds(combinedTags)
-        val entryId = timeEntryDao.insertEntryWithTags(entry, tagIds)
-        activeTimerDao.clearActiveTimer()
-
-        return Result.success(entryId)
+    private suspend fun <T> transactionResult(block: suspend () -> T): Result<T> {
+        return try {
+            Result.success(withTransaction(block))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     suspend fun addManualEntry(
@@ -101,7 +103,7 @@ class TimeTrackingRepository(private val db: AppDatabase) {
             return Result.failure(IllegalArgumentException("End time cannot be earlier than start time."))
         }
 
-        val durationSeconds = (endTime.epochSecond - startTime.epochSecond).coerceAtLeast(0)
+        val durationSeconds = java.time.Duration.between(startTime, endTime).seconds
         val cleanProject = project?.trim()?.ifEmpty { null }
         val cleanDesc = description?.trim()?.ifEmpty { null }
         val cleanTags = tags.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
@@ -130,16 +132,22 @@ class TimeTrackingRepository(private val db: AppDatabase) {
         val existing = timeEntryDao.getEntryWithTagsById(id)
             ?: return Result.failure(IllegalArgumentException("Entry #$id not found."))
 
-        val newStartInstant = startTime ?: DateTimeUtils.parseIsoOrFlexible(existing.entry.startTime)
+        val existingStart = DateTimeUtils.parseIsoOrFlexible(existing.entry.startTime)
             ?: return Result.failure(IllegalArgumentException("Invalid existing start time."))
-        val newEndInstant = endTime ?: DateTimeUtils.parseIsoOrFlexible(existing.entry.endTime)
+        val existingEnd = DateTimeUtils.parseIsoOrFlexible(existing.entry.endTime)
             ?: return Result.failure(IllegalArgumentException("Invalid existing end time."))
+        val newStartInstant = startTime ?: existingStart
+        val newEndInstant = endTime ?: existingEnd
 
         if (newEndInstant.isBefore(newStartInstant)) {
             return Result.failure(IllegalArgumentException("End time cannot be earlier than start time."))
         }
 
-        val newDurationSeconds = (newEndInstant.epochSecond - newStartInstant.epochSecond).coerceAtLeast(0)
+        val newDurationSeconds = if (newStartInstant == existingStart && newEndInstant == existingEnd) {
+            existing.entry.durationSeconds
+        } else {
+            java.time.Duration.between(newStartInstant, newEndInstant).seconds
+        }
         val newProject = project?.trim()?.ifEmpty { null } ?: existing.entry.project
         val newDesc = description?.trim()?.ifEmpty { null } ?: existing.entry.description
 

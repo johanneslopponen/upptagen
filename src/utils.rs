@@ -66,11 +66,15 @@ pub fn format_duration(seconds: i64) -> String {
 }
 
 pub fn format_local_datetime(dt: &DateTime<Utc>) -> String {
-    dt.with_timezone(&Local).format("%Y-%m-%d %H:%M").to_string()
+    dt.with_timezone(&Local)
+        .format("%Y-%m-%d %H:%M")
+        .to_string()
 }
 
 pub fn format_local_datetime_seconds(dt: &DateTime<Utc>) -> String {
-    dt.with_timezone(&Local).format("%Y-%m-%d %H:%M:%S").to_string()
+    dt.with_timezone(&Local)
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string()
 }
 
 #[cfg(test)]

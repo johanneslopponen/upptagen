@@ -340,8 +340,8 @@ fun EditEntryDialog(
     var tagsInput by remember { mutableStateOf(entryWithTags.tagNames.joinToString(", ")) }
 
     var selectedDate by remember { mutableStateOf(startZdt.toLocalDate()) }
-    var startTime by remember { mutableStateOf(startZdt.toLocalTime().withSecond(0).withNano(0)) }
-    var endTime by remember { mutableStateOf(endZdt.toLocalTime().withSecond(0).withNano(0)) }
+    var startTime by remember { mutableStateOf(startZdt.toLocalTime()) }
+    var endTime by remember { mutableStateOf(endZdt.toLocalTime()) }
 
     var durationMinutesInput by remember {
         val mins = ChronoUnit.MINUTES.between(startZdt, endZdt).coerceAtLeast(0L)
@@ -502,14 +502,9 @@ fun EditEntryDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val sDt = LocalDateTime.of(selectedDate, startTime)
-                    var eDt = LocalDateTime.of(selectedDate, endTime)
-                    if (eDt.isBefore(sDt)) {
-                        eDt = eDt.plusDays(1)
-                    }
-
-                    val newStartInstant = sDt.atZone(ZoneId.systemDefault()).toInstant()
-                    val newEndInstant = eDt.atZone(ZoneId.systemDefault()).toInstant()
+                    val (newStartInstant, newEndInstant) = DateTimeUtils.editedEntryTimes(
+                        existingStartInstant, existingEndInstant, selectedDate, startTime, endTime
+                    )
 
                     val tags = tagsInput.split(",")
                         .map { it.trim() }

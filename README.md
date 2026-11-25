@@ -1,14 +1,13 @@
 # upptagen
 
-A fast, feature-rich CLI and Web time tracking application written in Rust, using SQLite for local datastore storage.
+A CLI time tracking application written in Rust, using SQLite for local storage, with an Android companion app.
 
 ## Features
 
-- **Live Timer**: Start and stop real-time task timers from the CLI or Web UI.
+- **Live Timer**: Start and stop real-time task timers from the CLI.
 - **Retroactive Manual Entry**: Insert time entries retroactively if you forgot to turn on the timer.
 - **Tagging Support**: Tag entries and view aggregated statistics by tag and project.
 - **Multiple Export Formats**: Export time logs to **CSV** or **PDF** (rendered cleanly via LaTeX `pdflatex`).
-- **Web UI Dashboard**: Built-in REST API and modern single-page web server dashboard (`axum`).
 - **SQLite Storage**: Reliable local storage with filtering by project, tag, and date range.
 
 ## Installation & Build
@@ -72,15 +71,9 @@ Import logs exported from another instance or the Android companion app:
 upptagen import --path report.csv
 ```
 
-### Launch Web Server Dashboard
-```bash
-upptagen serve --port 3000
-```
-Then navigate to `http://localhost:3000` in your web browser.
-
 ## Mobile App (Android)
 
-A native Android companion app is available in [`android/`](file:///home/johannes/upptagen/android). It lets you start/stop timers, log manual hours, and tag tasks on your phone, then export a CSV to import into the desktop CLI with automatic deduplication. See [android/README.md](file:///home/johannes/upptagen/android/README.md) for build instructions.
+A native Android companion app is available in [`android/`](android/). It lets you start/stop timers, log manual hours, and tag tasks on your phone, then export a CSV to import into the desktop CLI with automatic deduplication. See [android/README.md](android/README.md) for build instructions.
 
 ## Testing
 

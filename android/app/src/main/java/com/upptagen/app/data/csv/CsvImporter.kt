@@ -2,10 +2,9 @@ package com.upptagen.app.data.csv
 
 import com.upptagen.app.data.repository.TimeTrackingRepository
 import com.upptagen.app.util.DateTimeUtils
-import java.io.BufferedReader
+import kotlinx.coroutines.CancellationException
+import org.apache.commons.csv.CSVFormat
 import java.io.InputStream
-import java.io.InputStreamReader
-import java.nio.charset.StandardCharsets
 
 object CsvImporter {
 
@@ -14,88 +13,61 @@ object CsvImporter {
         inputStream: InputStream
     ): Result<Int> {
         return try {
-            val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8))
-            val lines = reader.readLines()
-            if (lines.isEmpty()) {
-                return Result.success(0)
+            val count = inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                // A BOM may precede the first column in files saved by spreadsheet apps.
+                reader.mark(1)
+                if (reader.read() != 0xFEFF) reader.reset()
+                CSVFormat.DEFAULT.builder().setHeader().setSkipHeaderRecord(true).build()
+                    .parse(reader).use parse@{ parser ->
+                        val records = parser.records
+                        if (parser.headerMap.isEmpty() && records.isEmpty()) return@parse 0
+                        require(parser.headerMap.containsKey("Start Time")) { "Missing 'Start Time' column" }
+                        require(parser.headerMap.containsKey("End Time")) { "Missing 'End Time' column" }
+                        repository.withTransaction {
+                            val seen = repository.getAllEntriesWithTags().map { item ->
+                                DedupKey(
+                                    item.entry.project, item.entry.description,
+                                    DateTimeUtils.parseIsoOrFlexible(item.entry.startTime)?.epochSecond
+                                        ?: error("Invalid existing start time"),
+                                    DateTimeUtils.parseIsoOrFlexible(item.entry.endTime)?.epochSecond
+                                        ?: error("Invalid existing end time"),
+                                    item.tagNames.distinct().sorted()
+                                )
+                            }.toMutableSet()
+                            var importedCount = 0
+                            for (record in records) {
+                                val label = "CSV record ${record.recordNumber}"
+                                require(record.isConsistent) { "$label: Incorrect number of columns" }
+                                val start = DateTimeUtils.parseIsoOrFlexible(record.get("Start Time"))
+                                    ?: error("$label: Invalid 'Start Time'")
+                                val end = DateTimeUtils.parseIsoOrFlexible(record.get("End Time"))
+                                    ?: error("$label: Invalid 'End Time'")
+                                require(!end.isBefore(start)) { "$label: End time cannot be earlier than start time" }
+                                fun optional(name: String): String? =
+                                    if (record.isMapped(name)) record.get(name).trim().ifEmpty { null } else null
+                                val tags = optional("Tags").orEmpty().split(',')
+                                    .map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
+                                val project = optional("Project")
+                                val description = optional("Description")
+                                val key = DedupKey(project, description, start.epochSecond, end.epochSecond, tags)
+                                if (key in seen) continue
+                                try {
+                                    repository.addManualEntry(project, description, start, end, tags).getOrThrow()
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    throw IllegalStateException("$label: ${e.message}", e)
+                                }
+                                seen.add(key)
+                                importedCount++
+                            }
+                            importedCount
+                        }
+                    }
             }
-
-            // Parse header line to determine column indices
-            val headerTokens = parseCsvLine(lines[0])
-            val colMap = headerTokens.mapIndexed { index, name -> name.trim() to index }.toMap()
-
-            val projIdx = colMap["Project"]
-            val descIdx = colMap["Description"]
-            val startIdx = colMap["Start Time"] ?: return Result.failure(IllegalArgumentException("Missing 'Start Time' column"))
-            val endIdx = colMap["End Time"] ?: return Result.failure(IllegalArgumentException("Missing 'End Time' column"))
-            val tagsIdx = colMap["Tags"]
-
-            val existingEntries = repository.getAllEntriesWithTags()
-            val seen = existingEntries.map { entry ->
-                val startSec = DateTimeUtils.parseIsoOrFlexible(entry.entry.startTime)?.epochSecond ?: 0L
-                val endSec = DateTimeUtils.parseIsoOrFlexible(entry.entry.endTime)?.epochSecond ?: 0L
-                val sortedTags = entry.tagNames.sorted()
-                DedupKey(
-                    project = entry.entry.project,
-                    description = entry.entry.description,
-                    startSec = startSec,
-                    endSec = endSec,
-                    tags = sortedTags
-                )
-            }.toMutableSet()
-
-            var importedCount = 0
-
-            for (i in 1 until lines.size) {
-                val line = lines[i].trim()
-                if (line.isEmpty()) continue
-
-                val tokens = parseCsvLine(line)
-                if (tokens.size <= maxOf(startIdx, endIdx)) continue
-
-                val startStr = tokens[startIdx].trim()
-                val endStr = tokens[endIdx].trim()
-
-                val startInstant = DateTimeUtils.parseIsoOrFlexible(startStr) ?: continue
-                val endInstant = DateTimeUtils.parseIsoOrFlexible(endStr) ?: continue
-
-                val project = projIdx?.let { if (it < tokens.size) tokens[it].trim().ifEmpty { null } else null }
-                val description = descIdx?.let { if (it < tokens.size) tokens[it].trim().ifEmpty { null } else null }
-
-                val tags = if (tagsIdx != null && tagsIdx < tokens.size) {
-                    tokens[tagsIdx].split(",")
-                        .map { it.trim() }
-                        .filter { it.isNotEmpty() }
-                } else {
-                    emptyList()
-                }
-
-                val sortedTags = tags.sorted()
-                val key = DedupKey(
-                    project = project,
-                    description = description,
-                    startSec = startInstant.epochSecond,
-                    endSec = endInstant.epochSecond,
-                    tags = sortedTags
-                )
-
-                if (seen.contains(key)) {
-                    continue
-                }
-
-                repository.addManualEntry(
-                    project = project,
-                    description = description,
-                    startTime = startInstant,
-                    endTime = endInstant,
-                    tags = tags
-                )
-
-                seen.add(key)
-                importedCount++
-            }
-
-            Result.success(importedCount)
+            Result.success(count)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -108,39 +80,4 @@ object CsvImporter {
         val endSec: Long,
         val tags: List<String>
     )
-
-    private fun parseCsvLine(line: String): List<String> {
-        val tokens = mutableListOf<String>()
-        val sb = StringBuilder()
-        var inQuotes = false
-        var i = 0
-
-        while (i < line.length) {
-            val c = line[i]
-            if (inQuotes) {
-                if (c == '"') {
-                    if (i + 1 < line.length && line[i + 1] == '"') {
-                        sb.append('"')
-                        i++ // skip escaped quote
-                    } else {
-                        inQuotes = false
-                    }
-                } else {
-                    sb.append(c)
-                }
-            } else {
-                if (c == '"') {
-                    inQuotes = true
-                } else if (c == ',') {
-                    tokens.add(sb.toString())
-                    sb.clear()
-                } else {
-                    sb.append(c)
-                }
-            }
-            i++
-        }
-        tokens.add(sb.toString())
-        return tokens
-    }
 }
